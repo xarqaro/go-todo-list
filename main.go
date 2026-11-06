@@ -1,21 +1,39 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"strconv"
-	"todo-list/pkg/server"
-	"todo-list/tests"
+
+	"go1f/pkg/db"
+	"go1f/pkg/server"
+	"go1f/tests"
 )
 
-func main() {
+func run() error {
 	var port string
+	var dbFile string
 
 	if port = os.Getenv("TODO_PORT"); port == "" {
 		port = strconv.Itoa(tests.Port)
 	}
 
-	if err := server.Run(port); err != nil {
+	if dbFile = os.Getenv("TODO_DBFILE"); dbFile == "" {
+		dbFile = "scheduler.db"
+	}
+
+	if err := db.Init(dbFile); err != nil {
+		return fmt.Errorf("init db: %w", err)
+	}
+	defer db.CloseDB()
+
+	return server.Run(port)
+}
+
+func main() {
+	err := run()
+	if err != nil {
 		log.Fatal(err)
 	}
 }

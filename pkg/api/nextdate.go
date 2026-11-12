@@ -1,4 +1,4 @@
-package nextdate
+package api
 
 import (
 	"errors"
@@ -19,13 +19,16 @@ const (
 	searchLimitYears = 10
 )
 
-func afterNow(date, now time.Time) bool {
-	return date.After(now)
+type monthRule struct {
+	allowedMonthDays [32]bool
+	monthsMatches    [13]bool
+	lastDay          bool
+	secondToLast     bool
 }
 
 func searchLimit(date, now time.Time) time.Time {
 	base := now
-	if afterNow(date, now) {
+	if date.After(now) {
 		base = date
 	}
 	return base.AddDate(searchLimitYears, 0, 0)
@@ -43,7 +46,7 @@ func nextByDays(repeat string, date, now time.Time) (time.Time, error) {
 
 	for {
 		date = date.AddDate(0, 0, days)
-		if afterNow(date, now) {
+		if date.After(now) {
 			break
 		}
 	}
@@ -70,7 +73,7 @@ func nextByWeekdays(repeat []string, date, now time.Time) (time.Time, error) {
 	for {
 		date = date.AddDate(0, 0, 1)
 
-		if afterNow(date, now) && dayMatches[int(date.Weekday())] {
+		if date.After(now) && dayMatches[int(date.Weekday())] {
 			break
 		}
 	}
@@ -78,49 +81,74 @@ func nextByWeekdays(repeat []string, date, now time.Time) (time.Time, error) {
 	return date, nil
 }
 
-func nextByMonthDays(repeatDays, repeatMonths []string, date, now time.Time) (time.Time, error) {
-	var allowedMonthDays [32]bool
-	var monthsMatches [13]bool
-	var lastDay bool
-	var secondToLast bool
+func parseMonthRule(days, months []string) (monthRule, error) {
+	var rule monthRule
 
-	if len(repeatMonths) == 0 {
-		for i := range monthsMatches {
-			monthsMatches[i] = true
+	if len(months) == 0 {
+		for i := range rule.monthsMatches {
+			rule.monthsMatches[i] = true
 		}
 	} else {
-		for _, v := range repeatMonths {
+		for _, v := range months {
 			month, err := strconv.Atoi(v)
 			if err != nil {
-				return time.Time{}, err
+				return monthRule{}, err
 			}
 
 			if month < minMonthAmount || month > maxMonthsAmount {
-				return time.Time{}, errors.New("amount of months out of range")
+				return monthRule{}, errors.New("amount of months out of range")
 			}
 
-			monthsMatches[month] = true
+			rule.monthsMatches[month] = true
 		}
 	}
 
-	for _, repeatStr := range repeatDays {
-		day, err := strconv.Atoi(repeatStr)
+	for _, daysStr := range days {
+		day, err := strconv.Atoi(daysStr)
 		if err != nil {
-			return time.Time{}, err
+			return monthRule{}, err
 		}
 
 		if day == 0 || day < -2 || day > 31 {
-			return time.Time{}, errors.New("month days out of range")
+			return monthRule{}, errors.New("month days out of range")
 		}
 
 		switch day {
 		case -2:
-			secondToLast = true
+			rule.secondToLast = true
 		case -1:
-			lastDay = true
+			rule.lastDay = true
 		default:
-			allowedMonthDays[day] = true
+			rule.allowedMonthDays[day] = true
 		}
+	}
+
+	return rule, nil
+}
+
+func (r monthRule) matches(date time.Time) bool {
+
+	if !r.monthsMatches[int(date.Month())] {
+		return false
+	}
+
+	if r.allowedMonthDays[date.Day()] {
+		return true
+	}
+	if r.lastDay && date.AddDate(0, 0, 1).Day() == 1 {
+		return true
+	}
+	if r.secondToLast && date.AddDate(0, 0, 2).Day() == 1 {
+		return true
+	}
+
+	return false
+}
+
+func nextByMonthDays(repeatDays, repeatMonths []string, date, now time.Time) (time.Time, error) {
+	rule, err := parseMonthRule(repeatDays, repeatMonths)
+	if err != nil {
+		return time.Time{}, err
 	}
 
 	limit := searchLimit(date, now)
@@ -130,16 +158,8 @@ func nextByMonthDays(repeatDays, repeatMonths []string, date, now time.Time) (ti
 		if date.After(limit) {
 			return time.Time{}, errors.New("no matching date found")
 		}
-		dayMatches := allowedMonthDays[date.Day()]
 
-		if lastDay && date.AddDate(0, 0, 1).Day() == 1 {
-			dayMatches = true
-		}
-		if secondToLast && date.AddDate(0, 0, 2).Day() == 1 {
-			dayMatches = true
-		}
-
-		if afterNow(date, now) && monthsMatches[int(date.Month())] && dayMatches {
+		if date.After(now) && rule.matches(date) {
 			break
 		}
 	}
@@ -150,7 +170,7 @@ func nextByMonthDays(repeatDays, repeatMonths []string, date, now time.Time) (ti
 func nextYear(date, now time.Time) time.Time {
 	for {
 		date = date.AddDate(1, 0, 0)
-		if afterNow(date, now) {
+		if date.After(now) {
 			break
 		}
 	}

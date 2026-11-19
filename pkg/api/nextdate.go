@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -241,4 +242,32 @@ func NextDate(now time.Time, dstart, repeat string) (string, error) {
 	}
 
 	return date.Format(dateFormat), nil
+}
+
+func NextDateHandler(w http.ResponseWriter, r *http.Request) {
+	queryParams := r.URL.Query()
+	var now time.Time
+	var err error
+
+	nowStr := queryParams.Get("now")
+	if nowStr == "" {
+		t := time.Now()
+		now = time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+	} else {
+		now, err = time.Parse(dateFormat, nowStr)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	date := queryParams.Get("date")
+	repeat := queryParams.Get("repeat")
+
+	res, err := NextDate(now, date, repeat)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Write([]byte(res))
 }
